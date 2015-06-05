@@ -1,26 +1,22 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using AtApbdMpWf.BusinessLogic;
-using AtApbdMpWf.Data;
-using AtApbdMpWf.Entity;
+using Logic.Core;
+using Logic.Core.SubServices;
+using Logic.Entities;
 
 namespace AtApbdMpWf.Forms
 {
 	public partial class AddProjectionForm : Form
 	{
-		private CinemaService _cinemaService;
+		private ICineOsServices _cineOsServices;
 		private Cinema _currentlyViewedCinema;
 		private CinemaForm _parent;
-		public AddProjectionForm(CinemaService cinemaService, Cinema currentlyViewedCinema, CinemaForm parent)
+
+		public AddProjectionForm(ICineOsServices cineOsServices, Cinema currentlyViewedCinema, CinemaForm parent)
 		{
-			_cinemaService = cinemaService;
+			_cineOsServices = cineOsServices;
 			_currentlyViewedCinema = currentlyViewedCinema;
 			_parent = parent;
 
@@ -34,7 +30,7 @@ namespace AtApbdMpWf.Forms
 		private void AddProjectionForm_Load(object sender, EventArgs e)
 		{
 			//	Populate the combo box
-			var projectionRooms = _cinemaService.GetProjectionRooms(_currentlyViewedCinema);
+			var projectionRooms = _cineOsServices.GetProjectionRoomsFor(_currentlyViewedCinema).ToList();
 			ComboBoxRoom.DataSource = projectionRooms;
 			ComboBoxRoom.ValueMember = "Id";
 			ComboBoxRoom.DisplayMember = "RoomNumber";
@@ -65,7 +61,7 @@ namespace AtApbdMpWf.Forms
 				Length =  int.Parse(MaskedTextBoxLength.Text)
 			};
 
-			_cinemaService.AddProjection(projection, (ProjectionRoom) ComboBoxRoom.SelectedItem);
+            _cineOsServices.AddProjection(projection, (ProjectionRoom)ComboBoxRoom.SelectedItem);
 
 			_parent.UpdateForm();
 			Close();

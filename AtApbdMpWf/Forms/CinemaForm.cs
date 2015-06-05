@@ -1,26 +1,26 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
-using AtApbdMpWf.BusinessLogic;
-using AtApbdMpWf.Entity;
+using Logic.Core;
+using Logic.Entities;
 
 namespace AtApbdMpWf.Forms
 {
 	public partial class CinemaForm : Form
 	{
-		private CinemaService _cinemaService;
+		private ICineOsServices _cineOsServices;
 		private Cinema _currentlyViewedCinema;
 
-		public CinemaForm(CinemaService cinemaService)
+		public CinemaForm(ICineOsServices cineOsServices)
 		{
-			_cinemaService = cinemaService;
+			_cineOsServices = cineOsServices;
 			InitializeComponent();
 			InitializeFormData();
 		}
 
-		private void InitializeFormData()
+		public void InitializeFormData()
 		{
 			PopulateComboBoxCinemas();
 			_currentlyViewedCinema = (Cinema) ComboBoxCinemas.SelectedItem;
@@ -34,26 +34,28 @@ namespace AtApbdMpWf.Forms
 			LabelCinemaName.Text = _currentlyViewedCinema.Name;
 			LabelAddress.Text = _currentlyViewedCinema.Address;
 			LabelTelephone.Text = _currentlyViewedCinema.TelephoneNo;
-			LabelRegion.Text = _cinemaService.GetRegion(_currentlyViewedCinema).Name;
+			LabelRegion.Text = _currentlyViewedCinema.Region.Name;
 
 			//	Set the link label of the manager
-			var manager = _cinemaService.GetManager(_currentlyViewedCinema);
-			var managerNameSurname = string.Format("{0} {1}", manager.Name, manager.Surname);
+			var manager = _currentlyViewedCinema.Manager;
+			var managerNameSurname = manager.NameSurname;
 
 			LinkLabelManager.Text = managerNameSurname;
 
 			//	Populate employees data grid view
 			EmployeesDgv.DataSource = PopulateEmployeesDgv();
 
+			AvgTimePerEmpLabel.Text = _cineOsServices.CalculateProjectionTimePerEmployeeFor(_currentlyViewedCinema).ToString(CultureInfo.CurrentCulture);
+
 			//	Bolden the dates in month calendar
-			ProjectionCalendar.BoldedDates = _cinemaService.GetAllProjections(_currentlyViewedCinema)
+			ProjectionCalendar.BoldedDates = _cineOsServices.GetProjectionsFor(_currentlyViewedCinema)
 				.Select(projection => projection.DateTime).ToArray();
 			
 		}
 
 		DataTable PopulateProjectionDGVWithFutureProjections()
 		{
-			var projections = _cinemaService.GetAllProjections(_currentlyViewedCinema);
+			
 
 			var dataTable = new DataTable();
 
@@ -61,8 +63,8 @@ namespace AtApbdMpWf.Forms
 			dataTable.Columns.Add("Date and Time");
 			dataTable.Columns.Add("Length");
 
-			var futureProjections = projections.Where(projection => projection.DateTime.CompareTo(new DateTime()) < 0);
 
+			var futureProjections = _cineOsServices.GetFutureProjectionsFor(_currentlyViewedCinema);
 			foreach (var futureProjection in futureProjections)
 			{
 				dataTable.Rows.Add(futureProjection.Id, futureProjection.DateTime, futureProjection.Length);
@@ -73,7 +75,7 @@ namespace AtApbdMpWf.Forms
 
 		DataTable PopulateProjectionDGVWithFutureProjections(DateTime selectedDateTime)
 		{
-			var projections = _cinemaService.GetAllProjections(_currentlyViewedCinema, selectedDateTime);
+			var projections = _cineOsServices.GetProjectionsFor(_currentlyViewedCinema);
 
 			var dataTable = new DataTable();
 
@@ -93,7 +95,7 @@ namespace AtApbdMpWf.Forms
 
 		void PopulateComboBoxCinemas()
 		{
-			var cinemaList = _cinemaService.GetAllCinemas();
+			var cinemaList = _cineOsServices.Cinemas.ToList();
 
 			ComboBoxCinemas.DataSource = cinemaList;
 			ComboBoxCinemas.ValueMember = "Id";
@@ -111,7 +113,7 @@ namespace AtApbdMpWf.Forms
 			dataTable.Columns.Add("Email");
 
 
-			var employees = _cinemaService.GetAllEmployees(_currentlyViewedCinema);
+			var employees = _cineOsServices.GetEmployeesIn(_currentlyViewedCinema);
 
 			foreach (var employee in employees)
 			{
@@ -125,13 +127,13 @@ namespace AtApbdMpWf.Forms
 		private void monthCalendar1_DateChanged(object sender, DateRangeEventArgs e)
 		{
 			ProjectionsDataGridView.DataSource = PopulateProjectionDGVWithFutureProjections(ProjectionCalendar.SelectionStart);
-
+			ProjectionsDataGridView.Columns[0].Visible = false;
 			var date = ProjectionCalendar.SelectionStart.Date;
-			ShowingProjectionsLabel.Text = string.Format("{0}/{1}/{2}", date.Day, date.Month, date.Year);
+			ShowingProjectionsLabel.Text = string.Format("Showing projections for {0}/{1}/{2}", date.Day, date.Month, date.Year);
 
 		}
 
-		private void ComboBoxCinemas_SelectedIndexChanged(object sender, System.EventArgs e)
+		private void ComboBoxCinemas_SelectedIndexChanged(object sender, EventArgs e)
 		{
 			_currentlyViewedCinema = (Cinema) ComboBoxCinemas.SelectedItem;
 			UpdateForm();
@@ -139,8 +141,14 @@ namespace AtApbdMpWf.Forms
 
 		private void ButtonShowFuturePredictions_Click(object sender, EventArgs e)
 		{
+			ShowFutureProjections();
+		}
+
+		private void ShowFutureProjections()
+		{
 			ProjectionsDataGridView.DataSource = PopulateProjectionDGVWithFutureProjections();
-			ShowingProjectionsLabel.Text = "Future Projections";
+			ProjectionsDataGridView.Columns[0].Visible = false;
+			ShowingProjectionsLabel.Text = "Showing Future Projections";
 		}
 
 		private void ShowingProjectionsLabel_Click(object sender, EventArgs e)
@@ -150,11 +158,21 @@ namespace AtApbdMpWf.Forms
 
 		private void ButtonAddProjection_Click(object sender, EventArgs e)
 		{
-			var addProjectionForm = new AddProjectionForm(_cinemaService, _currentlyViewedCinema, this);
+			ShowAddProjectionForm();
+		}
+
+		private void ShowAddProjectionForm()
+		{
+			var addProjectionForm = new AddProjectionForm(_cineOsServices, _currentlyViewedCinema, this);
 			addProjectionForm.Show();
 		}
 
 		private void ButtonDeleteProjection_Click(object sender, EventArgs e)
+		{
+			DeleteProjection();
+		}
+
+		private void DeleteProjection()
 		{
 			if (ProjectionsDataGridView.SelectedRows.Count == 0)
 			{
@@ -169,12 +187,17 @@ namespace AtApbdMpWf.Forms
 
 			if (result == DialogResult.Yes)
 			{
-				_cinemaService.DeleteProjection(projectionId);
+                _cineOsServices.DeleteProjection(projectionId);
 				UpdateForm();
 			}
 		}
 
 		private void ButtonUpdateProjection_Click(object sender, EventArgs e)
+		{
+			ShowUpdateProjection();
+		}
+
+		private void ShowUpdateProjection()
 		{
 			if (ProjectionsDataGridView.SelectedRows.Count == 0)
 			{
@@ -185,20 +208,98 @@ namespace AtApbdMpWf.Forms
 			//	get the id of the selected row with projection
 			var projectionId = int.Parse(ProjectionsDataGridView.SelectedRows[0].Cells["Id"].Value.ToString());
 
-			var projectionToUpdate = _cinemaService.GetProjection(projectionId);
+			var projectionToUpdate = _cineOsServices.GetProjectionById(projectionId);
 
 
-			var updateProjectionForm = new UpdateProjectionForm(_currentlyViewedCinema, projectionToUpdate, _cinemaService, this);
+			var updateProjectionForm = new UpdateProjectionForm(_currentlyViewedCinema, projectionToUpdate, _cineOsServices, this);
 
 			updateProjectionForm.Show();
 		}
 
 		private void LinkLabelChangeManager_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
 		{
-			var updateManagerSubform = new ChangeManagerForm(this, _cinemaService, _cinemaService.GetManager(_currentlyViewedCinema), _currentlyViewedCinema);
+			ShowChangeManagerForm();
+		}
+
+		private void ShowChangeManagerForm()
+		{
+			var updateManagerSubform = new ChangeManagerForm(this, _cineOsServices, _currentlyViewedCinema.Manager, _currentlyViewedCinema);
 			updateManagerSubform.Show();
 		}
 
+		private void CinemaForm_KeyDown(object sender, KeyEventArgs e)
+		{
+			if(e.Control)
+				ProcessControlKeyPressed(e);
+			else if(e.Alt)
+ 				ProcessAltKeyPressed(e);
+			else 
+				ProcessBareKeyPressed(e);
 
+		}
+
+		private void ProcessControlKeyPressed(KeyEventArgs e)
+		{
+		
+		}
+
+		private void ProcessAltKeyPressed(KeyEventArgs e)
+		{
+			
+		}
+
+		private void ProcessBareKeyPressed(KeyEventArgs e)
+		{
+			switch (e.KeyCode)
+			{
+				case Keys.M:
+				{
+					ShowChangeManagerForm();
+					break;
+				}
+				case Keys.D:
+				{
+					DeleteProjection();
+					break;
+				}
+				case Keys.A:
+				{
+					ShowAddProjectionForm();
+					break;
+				}
+				case Keys.Z:
+				{
+					ShowUpdateProjection();
+					break;
+				}
+				case Keys.F:
+				{
+					ShowFutureProjections();
+					break;
+				}
+				case Keys.F5:
+				{
+					InitializeFormData();
+					break;
+				}
+			}
+		}
+
+		private void CinemaForm_Load(object sender, EventArgs e)
+		{
+
+		}
+
+		private void RefreshButton_Click(object sender, EventArgs e)
+		{
+			InitializeFormData();
+		}
+
+		private void CinemaForm_Enter(object sender, EventArgs e)
+		{
+			InitializeFormData();
+		}
 	}
+
 }
+
